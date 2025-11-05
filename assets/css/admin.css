@@ -1,0 +1,21 @@
+.ai-blog-generator-status {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.ai-blog-generator-status h2 {
+    margin-top: 0;
+    color: #23282d;
+}
+
+.ai-blog-generator-status p {
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+.ai-blog-generator-status strong {
+    color: #007cba;
+}
