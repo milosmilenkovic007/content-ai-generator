@@ -98,6 +98,22 @@ class AI_Blog_Generator_Admin {
         ?>
         <div class="wrap">
             <h1>AI Blog Post Generator</h1>
+            <?php
+            // Show feedback from Run now
+            $status = isset($_GET['ai_gen_status']) ? sanitize_text_field($_GET['ai_gen_status']) : '';
+            $msg = isset($_GET['ai_gen_msg']) ? sanitize_text_field(wp_unslash($_GET['ai_gen_msg'])) : '';
+            $post_id = isset($_GET['ai_gen_post']) ? absint($_GET['ai_gen_post']) : 0;
+            if ($status === 'done') {
+                echo '<div class="notice notice-success is-dismissible"><p>'.esc_html($msg);
+                if ($post_id) {
+                    echo ' <a class="button button-small" href="'.esc_url(get_edit_post_link($post_id)).'">'.__('Edit post','ai-blog-post-generator').'</a>';
+                    echo ' <a class="button button-small" href="'.esc_url(get_permalink($post_id)).'" target="_blank">'.__('View','ai-blog-post-generator').'</a>';
+                }
+                echo '</p></div>';
+            } elseif ($status === 'error') {
+                echo '<div class="notice notice-error is-dismissible"><p>'.esc_html($msg).'</p></div>';
+            }
+            ?>
             <p>Welcome to the AI Blog Post Generator plugin. Use the menu above to configure settings and prompts.</p>
 
             <div class="ai-blog-generator-status">

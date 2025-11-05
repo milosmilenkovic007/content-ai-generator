@@ -114,10 +114,26 @@ add_action('admin_post_ai_blog_generator_run_bot', function() {
     if ($bot_id) {
         $generator = new AI_Blog_Generator_API();
         set_transient('ai_bot_running_'.$bot_id, time(), 30 * MINUTE_IN_SECONDS);
-        $generator->generate_post_for_bot($bot_id);
+        $post_id = $generator->generate_post_for_bot($bot_id);
         delete_transient('ai_bot_running_'.$bot_id);
+        // Prepare feedback
+        $args = array();
+        $progress = get_transient('ai_bot_progress_'.$bot_id);
+        if ($post_id) {
+            $args['ai_gen_status'] = 'done';
+            $args['ai_gen_post'] = $post_id;
+            $args['ai_gen_msg'] = rawurlencode('Post created #'.$post_id);
+        } else {
+            $args['ai_gen_status'] = 'error';
+            $msg = ($progress && !empty($progress['message'])) ? $progress['message'] : __('Generation failed or skipped.', 'ai-blog-post-generator');
+            $args['ai_gen_msg'] = rawurlencode($msg);
+        }
+        $ref = wp_get_referer();
+        if ($ref) { $ref = add_query_arg($args, $ref); }
+        wp_safe_redirect($ref ? $ref : admin_url('admin.php?page=ai-blog-generator'));
+        exit;
     }
-    wp_safe_redirect(wp_get_referer());
+    wp_safe_redirect(admin_url('admin.php?page=ai-blog-generator'));
     exit;
 });
 
