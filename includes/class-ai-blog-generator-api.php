@@ -52,6 +52,19 @@ class AI_Blog_Generator_API {
     $title = $this->generate_content_from_prompt($title_prompt, $general_prompt, $library_text, $existing_titles, 'title', $model_to_use, $temperature);
     $title = $this->enforce_single_title($title);
     if (!$title) {
+        // Retry 1: default title prompt
+        if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Title empty. Retrying with a default title instruction…', 1, 8); }
+        $default_title_prompt = $this->build_default_title_prompt($bot_id);
+        $title = $this->generate_content_from_prompt($default_title_prompt, $general_prompt, $library_text, $existing_titles, 'title', $model_to_use, $temperature);
+        $title = $this->enforce_single_title($title);
+    }
+    if (!$title && $model_to_use !== $this->model) {
+        // Retry 2: fallback to global default model
+        if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Title still empty. Retrying with default model…', 1, 8); }
+        $title = $this->generate_content_from_prompt($default_title_prompt ?? $title_prompt, $general_prompt, $library_text, $existing_titles, 'title', $this->model, $temperature);
+        $title = $this->enforce_single_title($title);
+    }
+    if (!$title) {
         if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'No title generated — aborting.', 1, 8); }
         error_log('AI Blog Generator: Failed to generate a valid title for bot '.$bot_id);
         return false;
@@ -354,6 +367,19 @@ class AI_Blog_Generator_API {
         // fallback if empty
         if ($t === '') { return ''; }
         return $t;
+    }
+
+    private function build_default_title_prompt($bot_id) {
+        $niche = trim((string) get_option('ai_blog_generator_niche'));
+        $category_id = (int) get_post_meta($bot_id, 'ai_bot_category', true);
+        $cat = $category_id ? get_cat_name($category_id) : '';
+        $parts = array();
+        if ($niche) { $parts[] = 'niche: '.$niche; }
+        if ($cat) { $parts[] = 'category: '.$cat; }
+        $ctx = $parts ? (' ('.implode('; ', $parts).')') : '';
+        return 'Write a compelling, high-CTR blog post title'
+            . ' for our audience' . $ctx
+            . '. Keep it unique relative to provided existing titles. Max 60 characters.';
     }
 
     private function call_openai_api_messages($messages, $type_label = '', $model_override = null, $temperature = null) {
