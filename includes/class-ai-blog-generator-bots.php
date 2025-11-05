@@ -84,6 +84,7 @@ class AI_Blog_Generator_Bots {
         // Removed old Bot Library (text/pdf) per new requirement
         add_meta_box('ai_bot_image_category', __('Image Source Category', 'ai-blog-post-generator'), array($this, 'meta_image_category'), 'ai_bot', 'side', 'default');
         add_meta_box('ai_bot_actions', __('Actions', 'ai-blog-post-generator'), array($this, 'meta_actions'), 'ai_bot', 'side', 'high');
+        add_meta_box('ai_bot_example_cats', __('Example Categories', 'ai-blog-post-generator'), array($this, 'meta_example_categories'), 'ai_bot', 'side', 'default');
     }
 
     public function meta_settings($post) {
@@ -183,6 +184,19 @@ class AI_Blog_Generator_Bots {
         echo '<p class="description">'.__('Bots will pick featured images from this category in the AI Media Library.', 'ai-blog-post-generator').'</p>';
     }
 
+    public function meta_example_categories($post) {
+        $selected = get_post_meta($post->ID, 'ai_bot_example_categories', true);
+        $selected = is_array($selected) ? array_map('intval', $selected) : array();
+        $terms = get_terms(array('taxonomy'=>AI_Blog_Generator_Examples::TAX, 'hide_empty'=>false));
+        echo '<select name="ai_bot_example_categories[]" id="ai_bot_example_categories" multiple style="width:100%">';
+        foreach ($terms as $t) {
+            $sel = in_array($t->term_id, $selected) ? 'selected' : '';
+            echo '<option value="'.esc_attr($t->term_id).'" '.$sel.'>'.esc_html($t->name).'</option>';
+        }
+        echo '</select>';
+        echo '<p class="description">'.__('Pick Example Categories; the bot will consult these sites before generating articles.', 'ai-blog-post-generator').'</p>';
+    }
+
     // Fallback Featured Images meta box removed per requirements
 
     public function meta_actions($post) {
@@ -224,7 +238,10 @@ class AI_Blog_Generator_Bots {
         $img_cat = isset($_POST['ai_bot_image_category']) ? absint($_POST['ai_bot_image_category']) : '';
         update_post_meta($post_id, 'ai_bot_image_category', $img_cat);
         
-        // Fallback images option removed; nothing to save here
+        // Save Example Categories selection
+        $ex_cats = isset($_POST['ai_bot_example_categories']) ? (array) $_POST['ai_bot_example_categories'] : array();
+        $ex_cats = array_values(array_unique(array_filter(array_map('absint', $ex_cats))));
+        update_post_meta($post_id, 'ai_bot_example_categories', $ex_cats);
     }
 
     public function columns($columns) {

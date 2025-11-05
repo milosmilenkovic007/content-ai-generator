@@ -25,6 +25,7 @@ require_once AI_BLOG_GENERATOR_PLUGIN_DIR . 'includes/class-ai-blog-generator-ad
 require_once AI_BLOG_GENERATOR_PLUGIN_DIR . 'includes/class-ai-blog-generator-api.php';
 require_once AI_BLOG_GENERATOR_PLUGIN_DIR . 'includes/class-ai-blog-generator-bots.php';
 require_once AI_BLOG_GENERATOR_PLUGIN_DIR . 'includes/class-ai-blog-generator-media.php';
+require_once AI_BLOG_GENERATOR_PLUGIN_DIR . 'includes/class-ai-blog-generator-examples.php';
 
 // Activation hook
 register_activation_hook(__FILE__, 'ai_blog_generator_activate');
@@ -57,6 +58,7 @@ function ai_blog_generator_init() {
     (new AI_Blog_Generator())->init();
     (new AI_Blog_Generator_Bots())->init();
     (new AI_Blog_Generator_Media())->init();
+    (new AI_Blog_Generator_Examples())->init();
 }
 add_action('plugins_loaded', 'ai_blog_generator_init');
 

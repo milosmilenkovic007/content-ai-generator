@@ -31,8 +31,12 @@ class AI_Blog_Generator_API {
         $tags_prompt     = get_post_meta($bot_id, 'ai_bot_tags_prompt', true);
         $image_prompt    = get_post_meta($bot_id, 'ai_bot_image_prompt', true);
 
-        // Build library context text
+        // Build library context text + examples
         $library_text = $this->get_library_text_for_bot($bot_id);
+        $examples_text = $this->get_examples_text_for_bot($bot_id);
+        if (!empty($examples_text)) {
+            $library_text = trim($library_text . "\n\nExamples from selected external sites:\n" . $examples_text);
+        }
 
         // Get recent post titles to avoid duplicates
         $existing_titles = $this->get_recent_titles();
@@ -143,6 +147,55 @@ class AI_Blog_Generator_API {
         }
         error_log('AI Blog Generator: Failed to create post for bot '.$bot_id);
         return false;
+    }
+
+    private function get_examples_text_for_bot($bot_id) {
+        $term_ids = get_post_meta($bot_id, 'ai_bot_example_categories', true);
+        if (!is_array($term_ids) || empty($term_ids)) { return ''; }
+        $examples = get_posts(array(
+            'post_type' => 'ai_example',
+            'post_status' => 'publish',
+            'posts_per_page' => 8,
+            'tax_query' => array(
+                array('taxonomy'=>AI_Blog_Generator_Examples::TAX,'field'=>'term_id','terms'=>$term_ids)
+            )
+        ));
+        if (!$examples) { return ''; }
+        $parts = array();
+        foreach ($examples as $ex) {
+            $url = get_post_meta($ex->ID, 'ai_example_url', true);
+            if (!$url) { continue; }
+            $cached = get_post_meta($ex->ID, 'ai_example_summary', true);
+            $cached_at = (int) get_post_meta($ex->ID, 'ai_example_summary_cached_at', true);
+            $summary = '';
+            if ($cached && (time() - $cached_at) < DAY_IN_SECONDS) {
+                $summary = $cached;
+            } else {
+                $summary = $this->fetch_site_summary($url);
+                if ($summary) {
+                    update_post_meta($ex->ID, 'ai_example_summary', $summary);
+                    update_post_meta($ex->ID, 'ai_example_summary_cached_at', time());
+                }
+            }
+            if (!$summary) { $summary = $url; }
+            $parts[] = $ex->post_title . ' — ' . $url . "\n" . $summary;
+            if (strlen(implode("\n\n", $parts)) > 4000) { break; }
+        }
+        return implode("\n\n", $parts);
+    }
+
+    private function fetch_site_summary($url) {
+        $resp = wp_remote_get($url, array('timeout'=>12, 'redirection'=>5));
+        if (is_wp_error($resp)) { return ''; }
+        $html = wp_remote_retrieve_body($resp);
+        if (!$html) { return ''; }
+        $html = wp_strip_all_tags($html);
+        $html = html_entity_decode($html, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Collapse whitespace
+        $html = preg_replace('/\s+/', ' ', $html);
+        $text = trim($html);
+        if (mb_strlen($text) > 800) { $text = mb_substr($text, 0, 800).'…'; }
+        return $text;
     }
 
     private function update_seo_fields($post_id, $title, $content, $excerpt, $tags, $bot_id) {
