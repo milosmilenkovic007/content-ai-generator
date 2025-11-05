@@ -74,8 +74,18 @@ class AI_Blog_Generator_Bots {
     }
 
     public function enqueue_media($hook) {
-        // No media pickers needed on Bot screens anymore
-        return;
+        if (strpos($hook, 'ai_bot') !== false) {
+            wp_enqueue_script('ai-blog-generator-bot-admin', AI_BLOG_GENERATOR_PLUGIN_URL . 'assets/js/bot-admin.js', array('jquery'), AI_BLOG_GENERATOR_VERSION, true);
+            wp_localize_script('ai-blog-generator-bot-admin', 'AIBotGen', array(
+                'ajax' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('ai_blog_gen_now'),
+                'i18n' => array(
+                    'starting' => __('Starting generation…','ai-blog-post-generator'),
+                    'done' => __('Done','ai-blog-post-generator'),
+                    'error' => __('Error','ai-blog-post-generator')
+                )
+            ));
+        }
     }
 
     public function register_meta_boxes() {
@@ -201,7 +211,12 @@ class AI_Blog_Generator_Bots {
 
     public function meta_actions($post) {
         $url = wp_nonce_url(admin_url('admin-post.php?action=ai_blog_generator_run_bot&bot_id='.$post->ID), 'ai_blog_generator_run_bot');
-        echo '<a href="'.esc_url($url).'" class="button button-primary">'.__('Generate Now', 'ai-blog-post-generator').'</a>';
+        echo '<p><button type="button" class="button button-primary" id="ai-bot-generate-now" data-bot="'.esc_attr($post->ID).'">'.__('Generate Now', 'ai-blog-post-generator').'</button> ';
+        echo '<a href="'.esc_url($url).'" class="button" style="margin-left:6px">'.__('Fallback link', 'ai-blog-post-generator').'</a></p>';
+        echo '<div id="ai-bot-progress" style="display:none;border:1px solid #ccd0d4;background:#fff;height:10px;border-radius:3px;overflow:hidden">'
+            .'<div id="ai-bot-progress-bar" style="height:100%;width:0;background:#2271b1"></div>'
+            .'</div>';
+        echo '<p id="ai-bot-progress-text" style="display:none;margin-top:6px;font-size:12px;color:#555"></p>';
     }
 
     public function save_bot_meta($post_id) {

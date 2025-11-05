@@ -150,3 +150,51 @@ function ai_blog_generator_log($message) {
     if (count($logs) > 200) { $logs = array_slice($logs, -200); }
     update_option('ai_blog_generator_logs', $logs, false);
 }
+
+// Progress reporting: store in transient and expose via AJAX
+add_action('ai_blog_generator_progress', function($bot_id, $message, $step, $total){
+    set_transient('ai_bot_progress_'.$bot_id, array(
+        'status' => 'running',
+        'message' => (string) $message,
+        'step' => (int) $step,
+        'total' => (int) $total,
+        'ts' => time(),
+    ), 30 * MINUTE_IN_SECONDS);
+}, 10, 4);
+
+add_action('wp_ajax_ai_blog_generate_now', function(){
+    if (!current_user_can('manage_options')) { wp_send_json_error('forbidden', 403); }
+    $nonce = isset($_POST['nonce']) ? sanitize_text_field($_POST['nonce']) : '';
+    if (!wp_verify_nonce($nonce, 'ai_blog_gen_now')) { wp_send_json_error('bad-nonce', 403); }
+    $bot_id = isset($_POST['bot_id']) ? absint($_POST['bot_id']) : 0;
+    if (!$bot_id) { wp_send_json_error('missing', 400); }
+    set_transient('ai_bot_progress_'.$bot_id, array('status'=>'running','message'=>'Queued…','step'=>0,'total'=>8,'ts'=>time()), 30*MINUTE_IN_SECONDS);
+    try {
+        $generator = new AI_Blog_Generator_API();
+        $post_id = $generator->generate_post_for_bot($bot_id);
+        if ($post_id) {
+            set_transient('ai_bot_progress_'.$bot_id, array('status'=>'done','message'=>'Post created #'.$post_id,'step'=>8,'total'=>8,'post_id'=>$post_id,'ts'=>time()), 10*MINUTE_IN_SECONDS);
+            wp_send_json_success(array('post_id'=>$post_id));
+        } else {
+            // If skipped or failed, mark error; details should already be in progress stream
+            $current = get_transient('ai_bot_progress_'.$bot_id);
+            $msg = $current && !empty($current['message']) ? $current['message'] : 'Generation failed or skipped.';
+            set_transient('ai_bot_progress_'.$bot_id, array('status'=>'error','message'=>$msg,'step'=>0,'total'=>8,'ts'=>time()), 10*MINUTE_IN_SECONDS);
+            wp_send_json_success(array('status'=>'error'));
+        }
+    } catch (Throwable $e) {
+        set_transient('ai_bot_progress_'.$bot_id, array('status'=>'error','message'=>$e->getMessage(),'step'=>0,'total'=>8,'ts'=>time()), 10*MINUTE_IN_SECONDS);
+        wp_send_json_error('exception', 500);
+    }
+});
+
+add_action('wp_ajax_ai_blog_generation_progress', function(){
+    if (!current_user_can('manage_options')) { wp_send_json_error('forbidden', 403); }
+    $nonce = isset($_GET['nonce']) ? sanitize_text_field($_GET['nonce']) : '';
+    if (!wp_verify_nonce($nonce, 'ai_blog_gen_now')) { wp_send_json_error('bad-nonce', 403); }
+    $bot_id = isset($_GET['bot_id']) ? absint($_GET['bot_id']) : 0;
+    if (!$bot_id) { wp_send_json_error('missing', 400); }
+    $data = get_transient('ai_bot_progress_'.$bot_id);
+    if (!$data) { $data = array('status'=>'idle','message'=>'','step'=>0,'total'=>8); }
+    wp_send_json_success($data);
+});

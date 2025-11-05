@@ -39,7 +39,10 @@ class AI_Blog_Generator_API {
         }
 
         // Get recent post titles to avoid duplicates
-        $existing_titles = $this->get_recent_titles();
+    $existing_titles = $this->get_recent_titles();
+
+    // Progress: starting generation
+    if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Generating title…', 1, 8); }
 
     $bot_model = get_post_meta($bot_id, 'ai_bot_model', true);
     $bot_temperature = get_post_meta($bot_id, 'ai_bot_temperature', true);
@@ -47,19 +50,32 @@ class AI_Blog_Generator_API {
     $model_to_use = $bot_model ? $bot_model : $this->model;
 
     $title = $this->generate_content_from_prompt($title_prompt, $general_prompt, $library_text, $existing_titles, 'title', $model_to_use, $temperature);
+    $title = $this->enforce_single_title($title);
+    if (!$title) {
+        if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'No title generated — aborting.', 1, 8); }
+        error_log('AI Blog Generator: Failed to generate a valid title for bot '.$bot_id);
+        return false;
+    }
+
+    if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Generating content…', 2, 8); }
     $content = $this->generate_content_from_prompt($content_prompt, $general_prompt, $library_text, $existing_titles, 'content', $model_to_use, $temperature);
+    if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Generating excerpt…', 3, 8); }
     $excerpt = $this->generate_content_from_prompt($excerpt_prompt, $general_prompt, $library_text, $existing_titles, 'excerpt', $model_to_use, $temperature);
+    if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Generating tags…', 4, 8); }
     $tags = $this->generate_content_from_prompt($tags_prompt, $general_prompt, $library_text, $existing_titles, 'tags', $model_to_use, $temperature);
+    if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Preparing image prompt…', 5, 8); }
     $image_description = $this->generate_content_from_prompt($image_prompt, $general_prompt, $library_text, $existing_titles, 'image', $model_to_use, $temperature);
 
         if (!$title || !$content) {
             error_log('AI Blog Generator: Failed to generate title or content for bot '.$bot_id);
+            if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Missing title or content — aborting.', 5, 8); }
             return false;
         }
 
         // Basic duplicate check by title
         if ($this->title_exists($title)) {
             error_log('AI Blog Generator: Skipping post because similar title exists: '.$title);
+            if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Skipped: similar title already exists.', 5, 8); }
             return false;
         }
 
@@ -77,6 +93,7 @@ class AI_Blog_Generator_API {
                         $sim = $this->cosine_similarity($candidate_embed, $embed);
                         if ($sim >= $threshold) {
                             error_log('AI Blog Generator: Semantic duplicate detected vs post '.$pid.' (sim='.round($sim,3).')');
+                            if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Skipped: too similar to existing post (semantic).', 5, 8); }
                             return false;
                         }
                     }
@@ -91,6 +108,8 @@ class AI_Blog_Generator_API {
             $default_cat = (int) get_option('ai_blog_generator_default_category');
             if ($default_cat) { $category = $default_cat; }
         }
+
+        if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Creating post…', 6, 8); }
 
         $post_data = array(
             'post_title' => $title,
@@ -114,12 +133,14 @@ class AI_Blog_Generator_API {
         $post_id = wp_insert_post($post_data);
 
         if ($post_id) {
+            if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Applying SEO fields…', 7, 8); }
             // Fill SEO (ACF) fields based on generated content
             $this->update_seo_fields($post_id, $title, $content, $excerpt, $tags, $bot_id);
             if ($tags) {
                 $tag_array = array_map('trim', explode(',', $tags));
                 wp_set_post_tags($post_id, $tag_array);
             }
+            if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Setting featured image…', 8, 8); }
             if ($image_description) {
                 // Try real image generation; if fails, use fallback images; else placeholder
                 if (!$this->generate_featured_image_openai($post_id, $image_description)) {
@@ -146,6 +167,7 @@ class AI_Blog_Generator_API {
             return $post_id;
         }
         error_log('AI Blog Generator: Failed to create post for bot '.$bot_id);
+        if (!$dry_run) { do_action('ai_blog_generator_progress', $bot_id, 'Failed to create post.', 6, 8); }
         return false;
     }
 
@@ -299,6 +321,9 @@ class AI_Blog_Generator_API {
         if (!empty($existing_titles)) {
             $messages[] = array('role' => 'system', 'content' => 'Existing posts on this site (avoid duplicating topics and angles):\n'. implode("\n", $existing_titles));
         }
+        if ($type_label === 'title') {
+            $messages[] = array('role' => 'system', 'content' => 'Return ONLY a single, human-readable SEO title on one line. Max 60 characters. No quotes, no surrounding punctuation, no prefixes like "Title:" or numbering, no markdown or code fences.');
+        }
         if ($type_label === 'content') {
             $tpl = get_option('ai_blog_generator_content_template');
             if (!empty($tpl)) {
@@ -309,6 +334,26 @@ class AI_Blog_Generator_API {
 
         $response = $this->call_openai_api_messages($messages, $type_label, $model_override, $temperature);
         return $response ? trim($response) : '';
+    }
+
+    private function enforce_single_title($title) {
+        $t = (string) $title;
+        // take first line only
+        $t = preg_split("/(\r\n|\r|\n)/", $t, 2)[0];
+        // strip markdown/code fences and common prefixes
+        $t = preg_replace('/^\s*(#+|[-*]\s+|Title\s*:\s*|H1\s*:\s*)/i', '', $t);
+        // remove quotes/backticks
+        $t = trim($t, " \t\n\r\0\x0B\"'`»«“”‚‘’—-:");
+        // strip tags
+        $t = wp_strip_all_tags($t);
+        // collapse whitespace
+        $t = preg_replace('/\s+/', ' ', $t);
+        $t = trim($t);
+        // limit length
+        if (mb_strlen($t) > 60) { $t = rtrim(mb_substr($t, 0, 60), ' ,.;:-'); }
+        // fallback if empty
+        if ($t === '') { return ''; }
+        return $t;
     }
 
     private function call_openai_api_messages($messages, $type_label = '', $model_override = null, $temperature = null) {
