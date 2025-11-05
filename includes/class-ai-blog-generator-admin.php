@@ -186,6 +186,7 @@ class AI_Blog_Generator_Admin {
                                 <option value="gpt-3.5-turbo" <?php selected(get_option('ai_blog_generator_model'), 'gpt-3.5-turbo'); ?>>GPT-3.5 Turbo</option>
                                 <option value="gpt-4" <?php selected(get_option('ai_blog_generator_model'), 'gpt-4'); ?>>GPT-4</option>
                                 <option value="gpt-4-turbo" <?php selected(get_option('ai_blog_generator_model'), 'gpt-4-turbo'); ?>>GPT-4 Turbo</option>
+                                <option value="gpt-5" <?php selected(get_option('ai_blog_generator_model'), 'gpt-5'); ?>>GPT-5</option>
                             </select>
                         </td>
                     </tr>
